@@ -9,9 +9,15 @@ That's it.
 ## Controls 
 (all keyboard, shown in a fading HUD):
     - Space — play/pause auto-scroll
+    
     - ↑ / ↓ — increase/decrease scroll speed
+    
     - ← / → — jump back/forward to re-read or skip a line
+    
     - + / − — adjust font size
+    
     - M — mirror flip (for teleprompter glass rigs)
+    
     - F — fullscreen
+    
     - Esc — back to file picker
