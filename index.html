@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Teleprompter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #000;
+    --fg: #f5f5f5;
+    --accent: #ffcc00;
+    --dim: #888;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: Georgia, 'Times New Roman', serif;
+    overflow: hidden;
+  }
+
+  /* ---------- Picker screen ---------- */
+  #picker {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    text-align: center;
+    padding: 32px;
+  }
+  #picker h1 {
+    font-family: Helvetica, Arial, sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    font-size: 28px;
+    margin: 0;
+  }
+  #picker p.hint {
+    font-family: Helvetica, Arial, sans-serif;
+    color: var(--dim);
+    font-size: 14px;
+    max-width: 440px;
+    line-height: 1.5;
+    margin: 0;
+  }
+  #drop-zone {
+    border: 2px dashed #444;
+    border-radius: 12px;
+    padding: 48px 64px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    font-family: Helvetica, Arial, sans-serif;
+  }
+  #drop-zone:hover, #drop-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(255, 204, 0, 0.05);
+  }
+  #drop-zone span.big {
+    display: block;
+    font-size: 18px;
+    margin-bottom: 8px;
+  }
+  #drop-zone span.small {
+    display: block;
+    font-size: 13px;
+    color: var(--dim);
+  }
+  #file-input { display: none; }
+  #picker-error {
+    color: #ff6b6b;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    min-height: 16px;
+  }
+
+  /* ---------- Teleprompter screen ---------- */
+  #stage {
+    position: fixed;
+    inset: 0;
+    display: none;
+  }
+  #scroller {
+    position: absolute;
+    inset: 0;
+    overflow-y: scroll;
+    scrollbar-width: none;
+  }
+  #scroller::-webkit-scrollbar { display: none; }
+  #content {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 50vh 48px 80vh;
+    font-size: 48px;
+    line-height: 1.5;
+    font-weight: 400;
+  }
+  #content.mirrored { transform: scaleX(-1); }
+
+  #content h1, #content h2, #content h3 {
+    font-family: Helvetica, Arial, sans-serif;
+    color: var(--accent);
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  #content h1 { font-size: 1.3em; margin: 1em 0 0.6em; }
+  #content h2 { font-size: 1.15em; margin: 1em 0 0.5em; }
+  #content h3 { font-size: 1em; margin: 1em 0 0.4em; opacity: 0.85; }
+  #content p { margin: 0 0 0.7em; }
+  #content strong { color: var(--accent); font-weight: 700; }
+  #content em { font-style: italic; opacity: 0.9; }
+  #content ul, #content ol { margin: 0 0 0.7em; padding-left: 1.3em; }
+  #content li { margin-bottom: 0.3em; }
+  #content blockquote {
+    border-left: 4px solid var(--accent);
+    margin: 0 0 0.7em;
+    padding-left: 0.6em;
+    opacity: 0.85;
+    font-style: italic;
+  }
+  #content code {
+    font-family: 'Courier New', monospace;
+    background: rgba(255,255,255,0.08);
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+  #content pre {
+    background: rgba(255,255,255,0.06);
+    padding: 0.6em;
+    border-radius: 6px;
+    overflow-x: auto;
+  }
+  #content hr {
+    border: none;
+    border-top: 1px solid #444;
+    margin: 1.2em 0;
+  }
+
+  /* center line guide */
+  #guide-line {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 1px;
+    background: rgba(255,255,255,0.12);
+    pointer-events: none;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 20px;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: var(--dim);
+    background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+    opacity: 1;
+    transition: opacity 0.6s;
+    pointer-events: none;
+    letter-spacing: 0.02em;
+  }
+  #hud.faded { opacity: 0; }
+  #hud .state { color: var(--fg); font-weight: 600; }
+  #hud .key { color: var(--accent); }
+
+  #top-progress {
+    position: fixed;
+    top: 0; left: 0; height: 3px;
+    background: var(--accent);
+    width: 0%;
+    transition: opacity 0.6s;
+    z-index: 2;
+  }
+  #top-progress.faded { opacity: 0; }
+</style>
+</head>
+<body>
+
+  <div id="picker">
+    <h1>TELEPROMPTER</h1>
+    <div id="drop-zone">
+      <span class="big">Choose or drop a Markdown file</span>
+      <span class="small">.md / .markdown / .txt</span>
+    </div>
+    <input id="file-input" type="file" accept=".md,.markdown,.txt">
+    <p id="picker-error"></p>
+    <p class="hint">
+      Space: play/pause &nbsp;·&nbsp; ↑/↓: speed &nbsp;·&nbsp; ←/→: scroll back/forward &nbsp;·&nbsp;
+      +/−: font size &nbsp;·&nbsp; M: mirror &nbsp;·&nbsp; F: fullscreen &nbsp;·&nbsp; Esc: back
+    </p>
+  </div>
+
+  <div id="stage">
+    <div id="top-progress"></div>
+    <div id="scroller">
+      <div id="guide-line"></div>
+      <div id="content"></div>
+    </div>
+    <div id="hud">
+      <span><span class="key">Space</span> play/pause</span>
+      <span><span class="key">↑↓</span> speed: <span class="state" id="hud-speed">1.0x</span></span>
+      <span><span class="key">←→</span> scroll</span>
+      <span><span class="state" id="hud-state">Paused</span></span>
+      <span><span class="key">Esc</span> back</span>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- Minimal Markdown -> HTML ----------
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function inline(text) {
+    text = escapeHtml(text);
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    text = text.replace(/(?<![\w])_([^_]+)_(?![\w])/g, '<em>$1</em>');
+    return text;
+  }
+
+  function markdownToHtml(md) {
+    const lines = md.replace(/\r\n/g, '\n').split('\n');
+    let html = '';
+    let i = 0;
+    let listType = null; // 'ul' | 'ol'
+    let inCode = false;
+    let codeBuf = [];
+    let paraBuf = [];
+
+    function flushPara() {
+      if (paraBuf.length) {
+        html += '<p>' + inline(paraBuf.join(' ')) + '</p>\n';
+        paraBuf = [];
+      }
+    }
+    function closeList() {
+      if (listType) { html += '</' + listType + '>\n'; listType = null; }
+    }
+
+    while (i < lines.length) {
+      const raw = lines[i];
+      const line = raw;
+
+      if (/^\s*```/.test(line)) {
+        flushPara(); closeList();
+        if (!inCode) { inCode = true; codeBuf = []; }
+        else {
+          html += '<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>\n';
+          inCode = false;
+        }
+        i++; continue;
+      }
+      if (inCode) { codeBuf.push(raw); i++; continue; }
+
+      if (/^\s*$/.test(line)) { flushPara(); closeList(); i++; continue; }
+
+      let m;
+      if ((m = /^(#{1,6})\s+(.*)$/.exec(line))) {
+        flushPara(); closeList();
+        const level = Math.min(m[1].length, 3);
+        html += '<h' + level + '>' + inline(m[2]) + '</h' + level + '>\n';
+        i++; continue;
+      }
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        flushPara(); closeList();
+        html += '<hr>\n';
+        i++; continue;
+      }
+      if ((m = /^\s*>\s?(.*)$/.exec(line))) {
+        flushPara(); closeList();
+        html += '<blockquote>' + inline(m[1]) + '</blockquote>\n';
+        i++; continue;
+      }
+      if ((m = /^\s*[-*+]\s+(.*)$/.exec(line))) {
+        flushPara();
+        if (listType !== 'ul') { closeList(); html += '<ul>\n'; listType = 'ul'; }
+        html += '<li>' + inline(m[1]) + '</li>\n';
+        i++; continue;
+      }
+      if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(line))) {
+        flushPara();
+        if (listType !== 'ol') { closeList(); html += '<ol>\n'; listType = 'ol'; }
+        html += '<li>' + inline(m[1]) + '</li>\n';
+        i++; continue;
+      }
+
+      closeList();
+      paraBuf.push(line.trim());
+      i++;
+    }
+    flushPara();
+    closeList();
+    if (inCode && codeBuf.length) {
+      html += '<pre><code>' + escapeHtml(codeBuf.join('\n')) + '</code></pre>\n';
+    }
+    return html;
+  }
+
+  // ---------- DOM refs ----------
+  const picker = document.getElementById('picker');
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const pickerError = document.getElementById('picker-error');
+  const stage = document.getElementById('stage');
+  const scroller = document.getElementById('scroller');
+  const content = document.getElementById('content');
+  const hud = document.getElementById('hud');
+  const hudSpeed = document.getElementById('hud-speed');
+  const hudState = document.getElementById('hud-state');
+  const topProgress = document.getElementById('top-progress');
+
+  // ---------- State ----------
+  let speed = 60;        // pixels per second
+  const MIN_SPEED = 10;
+  const MAX_SPEED = 400;
+  const SPEED_STEP = 10;
+  let playing = false;
+  let mirrored = false;
+  let fontSize = 48;
+  let rafId = null;
+  let lastTs = null;
+  let hudHideTimer = null;
+
+  function loadFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      content.innerHTML = markdownToHtml(String(reader.result));
+      picker.style.display = 'none';
+      stage.style.display = 'block';
+      scroller.scrollTop = 0;
+      playing = false;
+      updateHud();
+      scroller.focus();
+    };
+    reader.onerror = () => {
+      pickerError.textContent = 'Could not read that file. Please try again.';
+    };
+    reader.readAsText(file);
+  }
+
+  function validateAndLoad(file) {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!/\.(md|markdown|txt)$/.test(name)) {
+      pickerError.textContent = 'Please choose a .md, .markdown, or .txt file.';
+      return;
+    }
+    pickerError.textContent = '';
+    loadFile(file);
+  }
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => validateAndLoad(e.target.files[0]));
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropZone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    })
+  );
+  ['dragleave', 'dragend', 'drop'].forEach(evt =>
+    dropZone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+    })
+  );
+  dropZone.addEventListener('drop', (e) => {
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    validateAndLoad(file);
+  });
+
+  // ---------- Playback loop ----------
+  function tick(ts) {
+    if (lastTs === null) lastTs = ts;
+    const dt = (ts - lastTs) / 1000;
+    lastTs = ts;
+    if (playing) {
+      scroller.scrollTop += speed * dt;
+      const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+      if (scroller.scrollTop >= maxScroll) {
+        playing = false;
+        updateHud();
+      }
+    }
+    updateProgress();
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function updateProgress() {
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+    const pct = maxScroll > 0 ? Math.min(100, (scroller.scrollTop / maxScroll) * 100) : 0;
+    topProgress.style.width = pct + '%';
+  }
+
+  function updateHud() {
+    hudSpeed.textContent = (speed / 60).toFixed(1) + 'x';
+    hudState.textContent = playing ? 'Playing' : 'Paused';
+    showHud();
+  }
+
+  function showHud() {
+    hud.classList.remove('faded');
+    topProgress.classList.remove('faded');
+    clearTimeout(hudHideTimer);
+    hudHideTimer = setTimeout(() => {
+      hud.classList.add('faded');
+      if (playing) topProgress.classList.add('faded');
+    }, 2500);
+  }
+
+  function togglePlay() {
+    playing = !playing;
+    lastTs = null;
+    updateHud();
+  }
+
+  function adjustSpeed(delta) {
+    speed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed + delta));
+    updateHud();
+  }
+
+  function jumpScroll(px) {
+    scroller.scrollTop = Math.max(0, scroller.scrollTop + px);
+    showHud();
+  }
+
+  function adjustFont(delta) {
+    fontSize = Math.max(20, Math.min(120, fontSize + delta));
+    content.style.fontSize = fontSize + 'px';
+    showHud();
+  }
+
+  function toggleMirror() {
+    mirrored = !mirrored;
+    content.classList.toggle('mirrored', mirrored);
+    showHud();
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+
+  function backToPicker() {
+    playing = false;
+    stage.style.display = 'none';
+    picker.style.display = 'flex';
+    fileInput.value = '';
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (stage.style.display !== 'block') return;
+    switch (e.code) {
+      case 'Space':
+        e.preventDefault();
+        togglePlay();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        adjustSpeed(SPEED_STEP);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        adjustSpeed(-SPEED_STEP);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        jumpScroll(-120);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        jumpScroll(120);
+        break;
+      case 'Equal':
+      case 'NumpadAdd':
+        e.preventDefault();
+        adjustFont(4);
+        break;
+      case 'Minus':
+      case 'NumpadSubtract':
+        e.preventDefault();
+        adjustFont(-4);
+        break;
+      case 'KeyM':
+        toggleMirror();
+        break;
+      case 'KeyF':
+        toggleFullscreen();
+        break;
+      case 'Escape':
+        backToPicker();
+        break;
+    }
+  });
+
+  scroller.addEventListener('wheel', () => { showHud(); }, { passive: true });
+
+  rafId = requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
