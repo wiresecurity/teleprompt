@@ -8,6 +8,7 @@ That's it.
 
 ## Controls 
 (all keyboard, shown in a fading HUD):
+    
     - Space — play/pause auto-scroll
     
     - ↑ / ↓ — increase/decrease scroll speed
